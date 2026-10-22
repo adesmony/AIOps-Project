@@ -88,6 +88,25 @@ class SqlUserRepository:
 
 
 class SqlEvidenceRepository:
+    _KNOWLEDGE_SQL = """
+        WITH query AS (
+            SELECT CAST(replace(plainto_tsquery('english', :query)::text,
+                                ' & ', ' | ') AS tsquery) AS terms,
+                   tsvector_to_array(to_tsvector('english', :query)) AS lexemes
+        )
+        SELECT id, source_file, row_id, issue_id, metadata,
+               ts_rank_cd(search_vector, query.terms, 32) AS relevance
+        FROM knowledge_records CROSS JOIN query
+        WHERE search_vector @@ query.terms
+          AND (CAST(:service AS text) IS NULL OR lower(service) = lower(:service))
+          AND ts_rank_cd(search_vector, query.terms, 32) >= :min_score
+          AND (
+              SELECT count(*) FROM unnest(query.lexemes) AS token
+              WHERE token = ANY(tsvector_to_array(search_vector))
+          ) >= greatest(2, ceil(cardinality(query.lexemes) * 0.6))
+        ORDER BY relevance DESC, id
+        LIMIT :limit
+    """
     _SEARCH_SQL = """
         SELECT id::text, source_type, source, excerpt, observed_at
         FROM (
@@ -140,6 +159,37 @@ class SqlEvidenceRepository:
     async def search(
         self, request: AnalysisRequest, embedding: Sequence[float], limit: int
     ) -> list[Citation]:
+        if self._settings.retrieval_mode == "knowledge":
+            self._parse_time_window(request.time_window)
+            async with self._sessions() as session:
+                await session.execute(text("SET TRANSACTION READ ONLY"))
+                rows = (
+                    (
+                        await session.execute(
+                            text(self._KNOWLEDGE_SQL),
+                            {
+                                "query": request.description,
+                                "service": request.service,
+                                "limit": min(limit, self._settings.max_evidence_items),
+                                "min_score": self._settings.retrieval_min_score,
+                            },
+                        )
+                    )
+                    .mappings()
+                    .all()
+                )
+                return [
+                    Citation(
+                        id=row["id"],
+                        sourceType="knowledge",
+                        source=f"{row['source_file']} / row {row['row_id']} / {row['issue_id']}",
+                        rowId=row["row_id"],
+                        issueId=row["issue_id"],
+                        relevance=float(row["relevance"]),
+                        excerpt=self._knowledge_excerpt(row["metadata"]),
+                    )
+                    for row in rows
+                ]
         since = self._parse_time_window(request.time_window)
         vector = "[" + ",".join(f"{value:.8f}" for value in embedding) + "]"
         rows = await self._execute_search(
@@ -161,11 +211,14 @@ class SqlEvidenceRepository:
             for row in rows
         ]
 
+    @staticmethod
+    def _knowledge_excerpt(metadata: dict[str, str]) -> str:
+        fields = ("root_cause", "solution", "prevention", "error_code", "log_message", "rag_text")
+        return "\n".join(f"{field}: {metadata[field][:300]}" for field in fields)[:2000]
+
     def _parse_time_window(self, value: str | None) -> datetime | None:
         if value is None:
-            return datetime.now(UTC) - timedelta(
-                minutes=self._settings.default_lookback_minutes
-            )
+            return datetime.now(UTC) - timedelta(minutes=self._settings.default_lookback_minutes)
         match = re.fullmatch(r"(?:last\s+)?(\d+)\s+(minute|minutes|hour|hours)", value.lower())
         if match is None:
             raise AppError.bad_request(
@@ -177,7 +230,7 @@ class SqlEvidenceRepository:
             if match.group(2).startswith("hour")
             else timedelta(minutes=amount)
         )
-        if delta > timedelta(days=self._settings.max_lookback_days):
+        if amount < 1 or delta > timedelta(days=self._settings.max_lookback_days):
             raise AppError.bad_request(
                 f"timeWindow cannot exceed {self._settings.max_lookback_days} days"
             )
@@ -207,5 +260,6 @@ class SqlEvidenceRepository:
         ):
             raise AppError.bad_request("Only read-only SELECT evidence queries are allowed")
         async with self._sessions() as session:
+            await session.execute(text("SET TRANSACTION READ ONLY"))
             result = await session.execute(text(statement), parameters)
             return [dict(row) for row in result.mappings().all()]

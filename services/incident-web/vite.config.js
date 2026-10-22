@@ -11,7 +11,7 @@ export default defineConfig(({ mode }) => {
       allowedHosts: true,
       strictPort: false,
       proxy: {
-        '/api': 'http://localhost:8000',
+        '/api': env.API_PROXY_TARGET || 'http://localhost:8000',
       },
     },
   };

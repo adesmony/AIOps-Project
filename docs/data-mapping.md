@@ -1,3 +1,19 @@
+## CSV Reference Knowledge
+
+The local CLI `python -m app.database.ingest ./Test_Dataset_azure_windows_error.csv`
+maps the dataset to `knowledge_records`. `rag_text` is the primary full-text document.
+The source filename and `row_id` form a stable identity; a SHA-256 fingerprint detects
+unchanged rows. The complete source row is retained as JSONB metadata. `issue_id` and
+`azure_service` are stored explicitly for provenance and service filtering. A generated
+English `tsvector` has a GIN index. No embedding service is involved.
+
+Diagnosis returns `sourceType=knowledge` citations with filename, row and issue IDs,
+relevance score, and bounded root cause/solution/prevention/error/log/document text.
+Historical reference rows are not constrained by incident time-window filters.
+Only the administrative CLI writes knowledge. Evidence retrieval uses read-only
+transactions; user/session and analysis-counter writes remain separate.
+See [README.md](../README.md) for exact setup, migration, import and validation commands.
+
 # PostgreSQL data mapping
 
 ## Status

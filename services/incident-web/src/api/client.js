@@ -16,7 +16,12 @@ async function request(path, options = {}, notifyUnauthorized = true) {
 
   if (!response.ok) {
     const body = await response.json().catch(() => null);
-    const error = new Error(body?.error?.message || `Request failed with status ${response.status}`);
+    const details = Array.isArray(body?.error?.details) ? body.error.details : [];
+    const validationMessages = details
+      .filter((detail) => typeof detail.message === 'string')
+      .map((detail) => `${detail.field || 'Request'}: ${detail.message}`);
+    const message = body?.error?.message || `Request failed with status ${response.status}`;
+    const error = new Error(validationMessages.length ? `${message}. ${validationMessages.join('; ')}` : message);
     error.status = response.status;
     throw error;
   }
@@ -42,6 +47,9 @@ function mapAnalysis(analysis) {
       source: citation.source,
       evidence: citation.excerpt,
       observedAt: citation.observedAt || 'Not timestamped',
+      rowId: citation.rowId,
+      issueId: citation.issueId,
+      relevance: citation.relevance,
     })),
   };
 }

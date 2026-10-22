@@ -3,6 +3,8 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.contracts.images import IncidentImage
+
 
 class ApiModel(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
@@ -31,29 +33,38 @@ class ErrorEnvelope(ApiModel):
 
 
 class AnalysisRequest(ApiModel):
+    image: IncidentImage | None = Field(default=None, exclude=True, repr=False)
     description: Annotated[str, Field(min_length=10, max_length=4000)]
     service: Annotated[str | None, Field(default=None, min_length=1, max_length=120)]
     time_window: Annotated[
         str | None, Field(default=None, alias="timeWindow", min_length=1, max_length=80)
     ]
+    user_type: Literal["operator", "developer", "manager"] = Field(
+        default="operator", alias="userType"
+    )
+    response_style: Literal["concise", "detailed", "executive"] = Field(
+        default="concise", alias="responseStyle"
+    )
 
 
 class Citation(ApiModel):
     id: str = Field(min_length=1, max_length=100)
-    source_type: Literal["runbook", "log", "metric"] = Field(alias="sourceType")
+    source_type: Literal["runbook", "log", "metric", "knowledge"] = Field(alias="sourceType")
     source: str = Field(min_length=1, max_length=300)
     excerpt: str = Field(min_length=1, max_length=2000)
     observed_at: str | None = Field(default=None, alias="observedAt")
+    row_id: str | None = Field(default=None, alias="rowId")
+    issue_id: str | None = Field(default=None, alias="issueId")
+    relevance: float | None = Field(default=None, ge=0, le=1)
 
 
 class DiagnosisOutput(ApiModel):
     diagnosis: str = Field(min_length=1, max_length=4000)
     confidence: float = Field(ge=0, le=1)
     citation_ids: list[str] = Field(alias="citationIds", max_length=25)
-    recommended_human_actions: list[str] = Field(
-        alias="recommendedHumanActions", max_length=12
-    )
+    recommended_human_actions: list[str] = Field(alias="recommendedHumanActions", max_length=12)
     limitations: list[str] = Field(max_length=12)
+    prevention: list[str] = Field(default_factory=list, max_length=12)
 
 
 class AnalysisResponse(ApiModel):
@@ -63,6 +74,7 @@ class AnalysisResponse(ApiModel):
     citations: list[Citation]
     recommended_human_actions: list[str] = Field(alias="recommendedHumanActions")
     limitations: list[str]
+    prevention: list[str] = Field(default_factory=list)
 
 
 class RequestDataPoint(ApiModel):

@@ -11,6 +11,38 @@ function response(body, status = 200) {
 }
 
 describe('live API contract', () => {
+  it('transports screenshot bytes and preferences with authenticated requests', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response({ citations: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+    const input = { description: 'Inspect the attached error',
+      image: { dataUrl: 'data:image/png;base64,cG5n' },
+      userType: 'developer', responseStyle: 'detailed' };
+    await api.analyzeIncident(input);
+    const options = fetchMock.mock.calls[0][1];
+    expect(options.credentials).toBe('include');
+    expect(JSON.parse(options.body)).toEqual(input);
+  });
+  it('shows field-specific validation details', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response({
+      error: { code: 'VALIDATION_ERROR', message: 'Request validation failed',
+        details: [{ field: 'description', message: 'String should have at least 10 characters' }] },
+      requestId: 'validation-test',
+    }, 422)));
+    await expect(api.analyzeIncident({ description: 'timeout' }))
+      .rejects.toThrow('description: String should have at least 10 characters');
+  });
+  it('preserves knowledge provenance, prevention and limitations', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response({
+      requestId: 'csv-test', diagnosis: 'Timeout', confidence: 0.4,
+      citations: [{ id: 'csv-1', sourceType: 'knowledge', source: 'errors.csv / row 1 / ISSUE-1',
+        excerpt: 'root_cause: timeout', rowId: '1', issueId: 'ISSUE-1', relevance: 0.05 }],
+      recommendedHumanActions: ['Review'], prevention: ['Monitor'], limitations: ['Historical example'],
+    })));
+    const result = await api.analyzeIncident({ description: 'A timeout occurred' });
+    expect(result.citations[0]).toMatchObject({ type: 'knowledge', rowId: '1', issueId: 'ISSUE-1' });
+    expect(result.prevention).toEqual(['Monitor']);
+    expect(result.limitations).toEqual(['Historical example']);
+  });
   it('maps backend users and cited evidence to the UI boundary', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(response({

@@ -13,6 +13,7 @@ from app.contracts import (
     PublicUser,
     RegisterRequest,
 )
+from app.contracts.images import IncidentImage
 
 
 class DatabaseProvider(Protocol):
@@ -44,6 +45,8 @@ class AnalysisRepository(Protocol):
 
 
 class OpenAIProvider(Protocol):
+    async def extract_image(self, image: IncidentImage) -> str: ...
+
     async def embed(self, text: str) -> Sequence[float]: ...
 
     async def diagnose(

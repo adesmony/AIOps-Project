@@ -1,5 +1,5 @@
 /**
- * @typedef {'runbook' | 'log' | 'metric'} CitationType
+ * @typedef {'runbook' | 'log' | 'metric' | 'knowledge'} CitationType
  *
  * @typedef {Object} Citation
  * @property {string} id
@@ -7,11 +7,17 @@
  * @property {string} source
  * @property {string} evidence
  * @property {string} observedAt
+ * @property {string=} rowId
+ * @property {string=} issueId
+ * @property {number=} relevance
  *
  * @typedef {Object} AnalysisRequest
  * @property {string} description
  * @property {string=} service
  * @property {string=} timeWindow
+ * @property {'operator' | 'developer' | 'manager'=} userType
+ * @property {'concise' | 'detailed' | 'executive'=} responseStyle
+ * @property {{dataUrl: string}=} image
  *
  * @typedef {Object} AnalysisResponse
  * @property {string} requestId
@@ -20,6 +26,7 @@
  * @property {Citation[]} citations
  * @property {string[]} recommendedHumanActions
  * @property {string[]} limitations
+ * @property {string[]} prevention
  *
  * @typedef {Object} User
  * @property {string} id

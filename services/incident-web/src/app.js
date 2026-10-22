@@ -30,6 +30,7 @@ import {
   createIcons,
 } from 'lucide';
 import { api } from './api/index.js';
+import { readAttachment } from './attachments.js';
 import './styles.css';
 
 const app = document.querySelector('#app');
@@ -309,6 +310,7 @@ function dataState() {
           <div><p class="eyebrow">Human review required</p><h2>Recommended human actions - not executed.</h2></div>
         </header>
         <ol>${analysis.recommendedHumanActions.map((action) => `<li>${escapeHtml(action)}</li>`).join('')}</ol>
+        ${analysis.prevention?.length ? `<h3>Prevention</h3><ul>${analysis.prevention.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : ''}
         <div class="limitations"><strong>Limitations</strong><ul>${analysis.limitations.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul></div>
       </article>
     </section>`;
@@ -366,18 +368,27 @@ function chatMessage(message) {
   const isUser = message.role === 'user';
   return `<div class="chat-row ${isUser ? 'user-message' : 'assistant-message'}">
     <span class="message-avatar">${icon(isUser ? 'CircleUserRound' : 'Activity')}</span>
-    <div><strong>${isUser ? 'You' : 'Incident analyst'}</strong><p>${escapeHtml(message.text)}</p>${message.meta ? `<small>${escapeHtml(message.meta)}</small>` : ''}</div>
+    <div><strong>${isUser ? 'You' : 'Incident analyst'}</strong><p>${escapeHtml(message.text)}</p>${message.meta ? `<small>${escapeHtml(message.meta)}</small>` : ''}
+    ${message.image ? `<img src="${escapeHtml(message.image)}" alt="Attached incident screenshot" style="max-width:100%;max-height:240px;object-fit:contain" />` : ''}
+    ${message.analysis ? `
+      <details><summary>Cited evidence (${message.analysis.citations.length})</summary>${evidenceContent(message.analysis)}</details>
+      ${message.analysis.recommendedHumanActions.length ? `<h3>Recommended Human Actions</h3><ul>${message.analysis.recommendedHumanActions.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : ''}
+      ${message.analysis.prevention?.length ? `<h3>Prevention</h3><ul>${message.analysis.prevention.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : ''}
+      <details><summary>Limitations</summary><ul>${message.analysis.limitations.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul></details>
+    ` : ''}</div>
   </div>`;
 }
 
 function chatView() {
   return `
     <section class="chat-view">
-      <div class="view-heading"><div><p class="eyebrow">Database-grounded assistant</p><h1>Incident chat</h1><p>Responses are synthesized from retrieved runbooks, logs, and metrics.</p></div><span class="source-pill">${icon('Database')} Database only</span></div>
+      <div class="view-heading"><div><p class="eyebrow">Database-grounded assistant</p><h1>Incident chat</h1><p>Historical knowledge and cited operational evidence.</p></div><span class="source-pill">${icon('Database')} Database only</span></div>
       <article class="chat-panel">
         <div class="message-list" id="message-list">${state.messages.map(chatMessage).join('')}</div>
         <form id="chat-form" class="chat-composer">
+          ${state.error ? `<p class="form-error" role="alert">${escapeHtml(state.error)}</p>` : ''}
           ${state.attachment ? `<div class="attachment-chip">${icon('Paperclip')} <span>${escapeHtml(state.attachment.name)}</span><button type="button" id="remove-attachment" aria-label="Remove attachment">&times;</button></div>` : ''}
+          ${state.attachment?.isImage ? `<img src="${escapeHtml(state.attachment.dataUrl)}" alt="Screenshot preview" style="max-width:100%;max-height:180px;object-fit:contain" />` : ''}
           <textarea id="chat-prompt" name="prompt" rows="3" maxlength="4000" placeholder="Describe the incident, symptoms, service, and time window..." required></textarea>
           <div class="composer-actions">
             <label class="upload-button" for="incident-file" title="Attach incident report">${icon('Paperclip')}<span>Attach report</span></label>
@@ -489,12 +500,13 @@ function bindWorkspaceEvents() {
   document.querySelector('#incident-file')?.addEventListener('change', async (event) => {
     const file = event.target.files[0];
     if (!file) return;
-    const isText = file.type.startsWith('text/') || /\.(json|csv|log)$/i.test(file.name);
-    state.attachment = {
-      name: file.name,
-      content: isText ? (await file.text()).slice(0, 2500) : '',
-      isImage: file.type.startsWith('image/'),
-    };
+    try {
+      state.attachment = await readAttachment(file);
+      state.error = '';
+    } catch (error) {
+      state.attachment = null;
+      state.error = error instanceof Error ? error.message : 'Unable to read attachment.';
+    }
     render();
   });
   document.querySelector('#remove-attachment')?.addEventListener('click', () => {
@@ -653,14 +665,12 @@ async function loadMetrics() {
 
 async function submitChat(prompt) {
   if (!prompt) return;
+  state.error = '';
   const attachment = state.attachment;
   const attachmentText = attachment?.content ? `\n\nAttached report (${attachment.name}):\n${attachment.content}` : '';
-  const styleText = `\n\nRespond for a ${state.preferences.userType} using a ${state.preferences.responseStyle} style.`;
-  const description = `${prompt}${attachmentText}${styleText}`.slice(0, 4000);
-  state.messages.push({ role: 'user', text: prompt, meta: attachment ? `Attached: ${attachment.name}` : '' });
-  if (attachment?.isImage) {
-    state.messages.push({ role: 'assistant', text: 'The image is attached, but this text-only RAG backend cannot inspect image contents yet. Add the visible error text to your prompt for grounded analysis.' });
-  }
+  const description = `${prompt}${attachmentText}`.slice(0, 4000);
+  state.messages.push({ role: 'user', text: prompt, meta: attachment ? `Attached: ${attachment.name}` : '',
+    image: attachment?.isImage ? attachment.dataUrl : null });
   state.messages.push({ role: 'assistant', text: 'Searching approved evidence...', pending: true });
   state.attachment = null;
   render();
@@ -669,11 +679,15 @@ async function submitChat(prompt) {
       description,
       service: null,
       timeWindow: 'Last 2 hours',
+      userType: state.preferences.userType,
+      responseStyle: state.preferences.responseStyle,
+      ...(attachment?.isImage ? { image: { dataUrl: attachment.dataUrl } } : {}),
     });
     state.messages.pop();
     state.messages.push({
       role: 'assistant',
       text: result.diagnosis,
+      analysis: result,
       meta: `${result.citations.length} citations · ${Math.round(result.confidence * 100)}% confidence`,
     });
     state.metrics = await api.getMetrics();
