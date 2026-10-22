@@ -1,0 +1,150 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "incident-analysis-api: dependencies check",
+      "type": "shell",
+      "command": "python -c \"import alembic, asyncpg, azure.identity, azure.monitor.opentelemetry, debugpy, email_validator, fastapi, httpx, openai, pgvector, pwdlib, pydantic_settings, pytest, jwt, sqlglot, sqlalchemy, structlog, uvicorn; print('API dependencies available')\"",
+      "options": {
+        "cwd": "${workspaceFolder}/services/incident-api"
+      },
+      "problemMatcher": [],
+      "runOptions": {
+        "instanceLimit": 1,
+        "instancePolicy": "silent"
+      }
+    },
+    {
+      "label": "Start Emulators",
+      "type": "shell",
+      "command": "docker compose up -d postgres",
+      "problemMatcher": [],
+      "runOptions": {
+        "instanceLimit": 1,
+        "instancePolicy": "silent"
+      }
+    },
+    {
+      "label": "db:migrate",
+      "type": "process",
+      "command": "pwsh",
+      "args": [
+        "-NoProfile",
+        "-File",
+        "${workspaceFolder}/.vscode/migrate-db.ps1"
+      ],
+      "dependsOn": "Start Emulators",
+      "problemMatcher": [],
+      "runOptions": {
+        "instanceLimit": 1,
+        "instancePolicy": "silent"
+      }
+    },
+    {
+      "label": "incident-analysis-api: prepare",
+      "dependsOn": [
+        "incident-analysis-api: dependencies check",
+        "db:migrate"
+      ],
+      "dependsOrder": "sequence",
+      "runOptions": {
+        "instanceLimit": 1,
+        "instancePolicy": "silent"
+      }
+    },
+    {
+      "label": "incident-analysis-api: uvicorn debug",
+      "type": "process",
+      "command": "pwsh",
+      "args": [
+        "-NoProfile",
+        "-File",
+        "${workspaceFolder}/.vscode/start-api.ps1"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}/services/incident-api"
+      },
+      "dependsOn": "incident-analysis-api: prepare",
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "python",
+        "pattern": {
+          "regexp": "^$"
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "INFO:.*Started server process",
+          "endsPattern": "INFO:.*Uvicorn running on"
+        }
+      },
+      "runOptions": {
+        "instanceLimit": 1,
+        "instancePolicy": "silent"
+      }
+    },
+    {
+      "label": "incident-chat-interface: dev",
+      "type": "shell",
+      "command": "npm run dev",
+      "options": {
+        "cwd": "${workspaceFolder}/services/incident-web"
+      },
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "vite",
+        "pattern": {
+          "regexp": "^$"
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "VITE",
+          "endsPattern": "Local:"
+        }
+      },
+      "runOptions": {
+        "instanceLimit": 1,
+        "instancePolicy": "silent"
+      }
+    },
+    {
+      "label": "debug-all-services: start",
+      "dependsOn": [
+        "incident-analysis-api: uvicorn debug",
+        "incident-chat-interface: dev"
+      ],
+      "dependsOrder": "sequence",
+      "runOptions": {
+        "instanceLimit": 1,
+        "instancePolicy": "silent"
+      }
+    },
+    {
+      "label": "emulators:start",
+      "dependsOn": "Start Emulators",
+      "runOptions": {
+        "instanceLimit": 1,
+        "instancePolicy": "silent"
+      }
+    },
+    {
+      "label": "emulators:stop",
+      "type": "shell",
+      "command": "docker compose down",
+      "problemMatcher": [],
+      "runOptions": {
+        "instanceLimit": 1,
+        "instancePolicy": "silent"
+      }
+    },
+    {
+      "label": "emulators:clean",
+      "type": "shell",
+      "command": "docker compose down --volumes",
+      "problemMatcher": [],
+      "runOptions": {
+        "instanceLimit": 1,
+        "instancePolicy": "silent"
+      }
+    }
+  ]
+}

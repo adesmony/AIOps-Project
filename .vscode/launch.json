@@ -1,0 +1,40 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Incident Analysis API (debug)",
+      "type": "debugpy",
+      "request": "attach",
+      "connect": {
+        "host": "localhost",
+        "port": 5678
+      },
+      "pathMappings": [
+        {
+          "localRoot": "${workspaceFolder}/services/incident-api",
+          "remoteRoot": "${workspaceFolder}/services/incident-api"
+        }
+      ],
+      "preLaunchTask": "incident-analysis-api: uvicorn debug"
+    },
+    {
+      "name": "Incident Chat Interface (debug)",
+      "type": "msedge",
+      "request": "launch",
+      "url": "http://localhost:5173",
+      "webRoot": "${workspaceFolder}/services/incident-web",
+      "preLaunchTask": "incident-chat-interface: dev"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Debug All Services",
+      "configurations": [
+        "Incident Analysis API (debug)",
+        "Incident Chat Interface (debug)"
+      ],
+      "preLaunchTask": "debug-all-services: start",
+      "stopAll": true
+    }
+  ]
+}

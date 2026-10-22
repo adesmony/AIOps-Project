@@ -1,0 +1,12 @@
+{
+  "credentials": {
+    "email": "debug-user@example.com",
+    "password": "local-debug-password",
+    "displayName": "Local Debug User"
+  },
+  "request": {
+    "description": "Checkout requests are returning intermittent HTTP 503 responses.",
+    "service": "checkout-api",
+    "timeWindow": "last 30 minutes"
+  }
+}
